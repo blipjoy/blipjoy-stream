@@ -21,11 +21,11 @@ bitflags! {
 
 #[derive(Debug, PartialEq, Eq)]
 enum EaterCycle {
-    LatchPC,        // Memory In + Counter Out
-    Fetch(u8),      // RAM Out + Instruction In + Counter Enable
-    Execute3(Inst), // Instruction-specific
-    Execute4(Inst), // Instruction-specific
-    Execute5(Inst), // Instruction-specific
+    LatchPC,         // Memory In + Counter Out
+    Fetch(u8),       // RAM Out + Instruction In + Counter Enable
+    Execute3(Inst3), // Instruction-specific
+    Execute4(Inst4), // Instruction-specific
+    Execute5(Inst5), // Instruction-specific
 }
 
 impl Default for EaterCycle {
@@ -35,65 +35,63 @@ impl Default for EaterCycle {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Inst {
-    Nop3,
-    Nop4,
-    Nop5,
-
-    Lda3(u8),
-    Lda4(u8),
-    Lda5,
-
-    Add3(u8),
-    Add4(u8),
-    Add5(u8),
-
-    Sub3(u8),
-    Sub4(u8),
-    Sub5(u8),
-
-    Sta3(u8),
-    Sta4(u8),
-    Sta5,
-
-    Ldi3(u8),
-    Ldi4,
-    Ldi5,
-
-    Jmp3(u8),
-    Jmp4,
-    Jmp5,
-
-    Jc3(u8),
-    Jc4,
-    Jc5,
-
-    Jz3(u8),
-    Jz4,
-    Jz5,
-
-    Out3,
-    Out4,
-    Out5,
-
+enum Inst3 {
+    Nop,
+    Lda(u8),
+    Add(u8),
+    Sub(u8),
+    Sta(u8),
+    Ldi(u8),
+    Jmp(u8),
+    Jc(u8),
+    Jz(u8),
+    Out,
     Hlt,
 }
 
-impl From<u8> for Inst {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Inst4 {
+    Nop,
+    Lda(u8),
+    Add(u8),
+    Sub(u8),
+    Sta(u8),
+    Ldi,
+    Jmp,
+    Jc,
+    Jz,
+    Out,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Inst5 {
+    Nop,
+    Lda,
+    Add(u8),
+    Sub(u8),
+    Sta,
+    Ldi,
+    Jmp,
+    Jc,
+    Jz,
+    Out,
+}
+
+impl From<u8> for Inst3 {
     fn from(value: u8) -> Self {
         match value >> 4 {
-            0x0 => Inst::Nop3,
-            0x1 => Inst::Lda3(value & 0xf),
-            0x2 => Inst::Add3(value & 0xf),
-            0x3 => Inst::Sub3(value & 0xf),
-            0x4 => Inst::Sta3(value & 0xf),
-            0x5 => Inst::Ldi3(value & 0xf),
-            0x6 => Inst::Jmp3(value & 0xf),
-            0x7 => Inst::Jc3(value & 0xf),
-            0x8 => Inst::Jz3(value & 0xf),
-            0xe => Inst::Out3,
-            0xf => Inst::Hlt,
-            _ => panic!("Unknown instruction: {:x?}", value),
+            0x0 => Inst3::Nop,
+            0x1 => Inst3::Lda(value),
+            0x2 => Inst3::Add(value),
+            0x3 => Inst3::Sub(value),
+            0x4 => Inst3::Sta(value),
+            0x5 => Inst3::Ldi(value & 0xf),
+            0x6 => Inst3::Jmp(value & 0xf),
+            0x7 => Inst3::Jc(value & 0xf),
+            0x8 => Inst3::Jz(value & 0xf),
+            0xe => Inst3::Out,
+            0xf => Inst3::Hlt,
+            _ => panic!("Unknown opcode: {:x?}", value),
         }
     }
 }
@@ -108,7 +106,7 @@ impl EaterSim {
         self.mem.copy_from_slice(mem);
     }
 
-    pub fn step(&mut self) -> bool {
+    fn step(&mut self) -> bool {
         if self.halt {
             return self.halt;
         }
@@ -125,74 +123,80 @@ impl EaterSim {
                 let addr = (pc & 0xf) as usize;
                 let inst = self.mem[addr];
 
-                EaterCycle::Execute3(Inst::from(inst))
+                EaterCycle::Execute3(Inst3::from(inst))
             }
             EaterCycle::Execute3(inst) => {
                 let inst = match inst {
-                    Inst::Nop3 => Inst::Nop4,
-                    Inst::Lda3(addr) => Inst::Lda4(addr),
-                    Inst::Add3(addr) => Inst::Add4(addr),
-                    Inst::Sub3(addr) => Inst::Sub4(addr),
-                    Inst::Sta3(addr) => Inst::Sta4(addr),
-                    Inst::Ldi3(imm) => {
+                    Inst3::Nop => Inst4::Nop,
+                    Inst3::Lda(addr) => Inst4::Lda(addr),
+                    Inst3::Add(addr) => Inst4::Add(addr),
+                    Inst3::Sub(addr) => Inst4::Sub(addr),
+                    Inst3::Sta(addr) => Inst4::Sta(addr),
+                    Inst3::Ldi(imm) => {
                         self.a = imm;
-                        Inst::Ldi4
+                        Inst4::Ldi
                     }
-                    Inst::Jmp3(pc) => {
+                    Inst3::Jmp(pc) => {
                         self.pc = pc;
-                        Inst::Jmp4
+                        Inst4::Jmp
                     }
-                    Inst::Jc3(pc) => {
+                    Inst3::Jc(pc) => {
                         if self.flags & Flags::C == Flags::C {
                             self.pc = pc;
                         }
-                        Inst::Jc4
+                        Inst4::Jc
                     }
-                    Inst::Jz3(pc) => {
+                    Inst3::Jz(pc) => {
                         if self.flags & Flags::Z == Flags::Z {
                             self.pc = pc;
                         }
-                        Inst::Jz4
+                        Inst4::Jz
                     }
-                    Inst::Out3 => {
+                    Inst3::Out => {
                         println!("{}", self.a);
-                        Inst::Out4
+                        Inst4::Out
                     }
-                    Inst::Hlt => {
+                    Inst3::Hlt => {
                         self.halt = true;
                         return self.halt;
                     }
-                    _ => todo!(),
                 };
 
                 EaterCycle::Execute4(inst)
             }
             EaterCycle::Execute4(inst) => {
                 let inst = match inst {
-                    Inst::Nop4 => Inst::Nop5,
-                    Inst::Lda4(addr) => {
+                    Inst4::Nop => Inst5::Nop,
+                    Inst4::Lda(addr) => {
+                        let addr = addr & 0xf;
                         self.a = self.mem[addr as usize];
-                        Inst::Lda5
+                        Inst5::Lda
                     }
-                    Inst::Add4(addr) => Inst::Add5(self.mem[addr as usize]),
-                    Inst::Sub4(addr) => Inst::Sub5(self.mem[addr as usize]),
-                    Inst::Sta4(addr) => {
+                    Inst4::Add(addr) => {
+                        let addr = addr & 0xf;
+                        Inst5::Add(self.mem[addr as usize])
+                    }
+                    Inst4::Sub(addr) => {
+                        let addr = addr & 0xf;
+                        Inst5::Sub(self.mem[addr as usize])
+                    }
+                    Inst4::Sta(addr) => {
+                        let addr = addr & 0xf;
                         self.mem[addr as usize] = self.a;
-                        Inst::Sta5
+                        Inst5::Sta
                     }
-                    Inst::Ldi4 => Inst::Ldi5,
-                    Inst::Jmp4 => Inst::Jmp5,
-                    Inst::Jc4 => Inst::Jc5,
-                    Inst::Jz4 => Inst::Jz5,
-                    Inst::Out4 => Inst::Out5,
-                    _ => todo!(),
+                    Inst4::Ldi => Inst5::Ldi,
+                    Inst4::Jmp => Inst5::Jmp,
+                    Inst4::Jc => Inst5::Jc,
+                    Inst4::Jz => Inst5::Jz,
+                    Inst4::Out => Inst5::Out,
                 };
 
                 EaterCycle::Execute5(inst)
             }
             EaterCycle::Execute5(inst) => {
                 match inst {
-                    Inst::Add5(b) => {
+                    Inst5::Add(b) => {
                         let carry = (self.a as u16).wrapping_add(b as u16);
 
                         self.a = carry as u8;
@@ -204,7 +208,7 @@ impl EaterSim {
                             Flags::CLEAR
                         };
                     }
-                    Inst::Sub5(b) => {
+                    Inst5::Sub(b) => {
                         let carry = (self.a as u16).wrapping_sub(b as u16);
 
                         self.a = carry as u8;
@@ -225,6 +229,14 @@ impl EaterSim {
 
         self.halt
     }
+
+    pub fn run(&mut self) {
+        loop {
+            if self.step() {
+                break;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -240,7 +252,7 @@ mod tests {
         assert_eq!(sim.cycle, EaterCycle::Fetch(0));
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst::Nop3));
+        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst3::Nop));
 
         for _ in 0..3 {
             sim.step();
@@ -267,17 +279,17 @@ mod tests {
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst::Lda3(0xf)));
+        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst3::Lda(0x1f)));
         assert_eq!(sim.a, 0);
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst::Lda4(0xf)));
+        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst4::Lda(0x1f)));
         assert_eq!(sim.a, 0);
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst::Lda5));
+        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst5::Lda));
         assert_eq!(sim.a, 0x55);
 
         sim.step();
@@ -308,17 +320,17 @@ mod tests {
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst::Add3(0xf)));
+        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst3::Add(0x2f)));
         assert_eq!(sim.a, 0);
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst::Add4(0xf)));
+        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst4::Add(0x2f)));
         assert_eq!(sim.a, 0);
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst::Add5(0x60)));
+        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst5::Add(0x60)));
 
         sim.step();
         assert_eq!(sim.pc, 1);
@@ -333,17 +345,17 @@ mod tests {
 
         sim.step();
         assert_eq!(sim.pc, 2);
-        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst::Add3(0xf)));
+        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst3::Add(0x2f)));
         assert_eq!(sim.a, 0x60);
 
         sim.step();
         assert_eq!(sim.pc, 2);
-        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst::Add4(0xf)));
+        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst4::Add(0x2f)));
         assert_eq!(sim.a, 0x60);
 
         sim.step();
         assert_eq!(sim.pc, 2);
-        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst::Add5(0x60)));
+        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst5::Add(0x60)));
         assert_eq!(sim.a, 0x60);
 
         sim.step();
@@ -359,17 +371,17 @@ mod tests {
 
         sim.step();
         assert_eq!(sim.pc, 3);
-        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst::Add3(0xf)));
+        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst3::Add(0x2f)));
         assert_eq!(sim.a, 0xc0);
 
         sim.step();
         assert_eq!(sim.pc, 3);
-        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst::Add4(0xf)));
+        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst4::Add(0x2f)));
         assert_eq!(sim.a, 0xc0);
 
         sim.step();
         assert_eq!(sim.pc, 3);
-        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst::Add5(0x60)));
+        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst5::Add(0x60)));
         assert_eq!(sim.a, 0xc0);
         assert_eq!(sim.flags, Flags::CLEAR);
 
@@ -401,17 +413,17 @@ mod tests {
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst::Sub3(0xf)));
+        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst3::Sub(0x3f)));
         assert_eq!(sim.a, 0);
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst::Sub4(0xf)));
+        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst4::Sub(0x3f)));
         assert_eq!(sim.a, 0);
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst::Sub5(0x60)));
+        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst5::Sub(0x60)));
         assert_eq!(sim.flags, Flags::CLEAR);
 
         sim.step();
@@ -428,17 +440,17 @@ mod tests {
 
         sim.step();
         assert_eq!(sim.pc, 2);
-        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst::Sub3(0xf)));
+        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst3::Sub(0x3f)));
         assert_eq!(sim.a, 0xa0);
 
         sim.step();
         assert_eq!(sim.pc, 2);
-        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst::Sub4(0xf)));
+        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst4::Sub(0x3f)));
         assert_eq!(sim.a, 0xa0);
 
         sim.step();
         assert_eq!(sim.pc, 2);
-        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst::Sub5(0x60)));
+        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst5::Sub(0x60)));
         assert_eq!(sim.a, 0xa0);
         assert_eq!(sim.flags, Flags::C);
 
@@ -456,17 +468,17 @@ mod tests {
 
         sim.step();
         assert_eq!(sim.pc, 3);
-        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst::Sub3(0xf)));
+        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst3::Sub(0x3f)));
         assert_eq!(sim.a, 0x40);
 
         sim.step();
         assert_eq!(sim.pc, 3);
-        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst::Sub4(0xf)));
+        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst4::Sub(0x3f)));
         assert_eq!(sim.a, 0x40);
 
         sim.step();
         assert_eq!(sim.pc, 3);
-        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst::Sub5(0x60)));
+        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst5::Sub(0x60)));
         assert_eq!(sim.a, 0x40);
         assert_eq!(sim.flags, Flags::CLEAR);
 
@@ -495,18 +507,18 @@ mod tests {
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst::Sta3(0xf)));
+        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst3::Sta(0x4f)));
         assert_eq!(sim.a, 0x55);
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst::Sta4(0xf)));
+        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst4::Sta(0x4f)));
         assert_eq!(sim.a, 0x55);
         assert_eq!(sim.mem[15], 0);
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst::Sta5));
+        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst5::Sta));
         assert_eq!(sim.a, 0x55);
         assert_eq!(sim.mem[15], 0x55);
 
@@ -534,17 +546,17 @@ mod tests {
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst::Ldi3(0xf)));
+        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst3::Ldi(0xf)));
         assert_eq!(sim.a, 0);
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst::Ldi4));
+        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst4::Ldi));
         assert_eq!(sim.a, 0xf);
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst::Ldi5));
+        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst5::Ldi));
         assert_eq!(sim.a, 0xf);
 
         sim.step();
@@ -568,17 +580,17 @@ mod tests {
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst::Jmp3(0xf)));
+        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst3::Jmp(0xf)));
         assert_eq!(sim.a, 0);
 
         sim.step();
         assert_eq!(sim.pc, 0xf);
-        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst::Jmp4));
+        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst4::Jmp));
         assert_eq!(sim.a, 0);
 
         sim.step();
         assert_eq!(sim.pc, 0xf);
-        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst::Jmp5));
+        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst5::Jmp));
         assert_eq!(sim.a, 0);
 
         sim.step();
@@ -604,17 +616,17 @@ mod tests {
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst::Jc3(0xf)));
+        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst3::Jc(0xf)));
         assert_eq!(sim.a, 0);
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst::Jc4));
+        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst4::Jc));
         assert_eq!(sim.a, 0);
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst::Jc5));
+        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst5::Jc));
         assert_eq!(sim.a, 0);
 
         sim.step();
@@ -634,17 +646,17 @@ mod tests {
 
         sim.step();
         assert_eq!(sim.pc, 2);
-        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst::Jc3(0xf)));
+        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst3::Jc(0xf)));
         assert_eq!(sim.a, 0);
 
         sim.step();
         assert_eq!(sim.pc, 0xf);
-        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst::Jc4));
+        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst4::Jc));
         assert_eq!(sim.a, 0);
 
         sim.step();
         assert_eq!(sim.pc, 0xf);
-        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst::Jc5));
+        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst5::Jc));
         assert_eq!(sim.a, 0);
 
         sim.step();
@@ -673,17 +685,17 @@ mod tests {
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst::Jz3(0xf)));
+        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst3::Jz(0xf)));
         assert_eq!(sim.a, 0);
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst::Jz4));
+        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst4::Jz));
         assert_eq!(sim.a, 0);
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst::Jz5));
+        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst5::Jz));
         assert_eq!(sim.a, 0);
 
         sim.step();
@@ -703,17 +715,17 @@ mod tests {
 
         sim.step();
         assert_eq!(sim.pc, 2);
-        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst::Jz3(0xf)));
+        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst3::Jz(0xf)));
         assert_eq!(sim.a, 0);
 
         sim.step();
         assert_eq!(sim.pc, 0xf);
-        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst::Jz4));
+        assert_eq!(sim.cycle, EaterCycle::Execute4(Inst4::Jz));
         assert_eq!(sim.a, 0);
 
         sim.step();
         assert_eq!(sim.pc, 0xf);
-        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst::Jz5));
+        assert_eq!(sim.cycle, EaterCycle::Execute5(Inst5::Jz));
         assert_eq!(sim.a, 0);
 
         sim.step();
@@ -739,12 +751,12 @@ mod tests {
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst::Hlt));
+        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst3::Hlt));
         assert!(!sim.halt);
 
         sim.step();
         assert_eq!(sim.pc, 1);
-        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst::Hlt));
+        assert_eq!(sim.cycle, EaterCycle::Execute3(Inst3::Hlt));
         assert!(sim.halt);
         assert_eq!(sim.a, 0);
         assert_eq!(sim.flags, Flags::CLEAR);

@@ -1,4 +1,4 @@
-use ep01::EaterSim;
+use eater::EaterSim;
 use std::env;
 use std::fs;
 
@@ -11,12 +11,7 @@ fn main() -> Result<(), std::io::Error> {
 
     let mut sim = EaterSim::new();
     sim.load(&fs::read(path)?);
-
-    loop {
-        if sim.step() {
-            break;
-        }
-    }
+    sim.run();
 
     Ok(())
 }

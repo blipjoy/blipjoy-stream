@@ -28,12 +28,12 @@ impl EaterVm {
         self.mem.copy_from_slice(mem);
     }
 
-    pub fn step(&mut self) -> bool {
+    fn step(&mut self) -> bool {
         if self.halt {
             return self.halt;
         }
 
-        let inst = self.mem[self.pc as usize];
+        let inst = self.mem[(self.pc & 0xf) as usize];
         let x = inst & 0xf;
         let opcode = inst >> 4;
 
@@ -112,6 +112,14 @@ impl EaterVm {
         }
 
         self.halt
+    }
+
+    pub fn run(&mut self) {
+        loop {
+            if self.step() {
+                break;
+            }
+        }
     }
 }
 
